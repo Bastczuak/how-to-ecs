@@ -6,9 +6,54 @@ use sdl2::rect::{Point, Rect};
 use sdl2::render::{Texture, WindowCanvas};
 use std::time::Duration;
 
+const PLAYER_MOVEMENT_SPEED: i32 = 10;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Direction {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+
 struct Player {
   position: Point,
   sprite: Rect,
+  speed: i32,
+  direction: Direction,
+  current_frame: i32,
+}
+
+fn update_player(player: &mut Player) {
+  use self::Direction::*;
+  match player.direction {
+    Left => {
+      player.position = player.position.offset(-player.speed, 0);
+    }
+    Right => {
+      player.position = player.position.offset(player.speed, 0);
+    }
+    Up => {
+      player.position = player.position.offset(0, -player.speed);
+    }
+    Down => {
+      player.position = player.position.offset(0, player.speed);
+    }
+  }
+
+  if player.speed != 0 {
+    player.current_frame = (player.current_frame + 1) % 3;
+  }
+}
+
+fn direction_spreedsheet_row(direction: Direction) -> i32 {
+  use self::Direction::*;
+  match direction {
+    Up => 3,
+    Down => 0,
+    Left => 1,
+    Right => 2,
+  }
 }
 
 fn render(
@@ -20,13 +65,16 @@ fn render(
   canvas.set_draw_color(color);
   canvas.clear();
   let (w, h) = canvas.output_size()?;
-  let screen_posititon = player.position + Point::new(w as i32 / 2, h as i32 / 2);
-  let screen_rect = Rect::from_center(
-    screen_posititon,
-    player.sprite.width(),
-    player.sprite.height(),
+  let (frame_width, frame_height) = player.sprite.size();
+  let current_frame = Rect::new(
+    player.sprite.x() + frame_width as i32 * player.current_frame,
+    player.sprite.y() + frame_height as i32 * direction_spreedsheet_row(player.direction),
+    frame_width,
+    frame_height,
   );
-  canvas.copy(texture, player.sprite, screen_rect)?;
+  let screen_posititon = player.position + Point::new(w as i32 / 2, h as i32 / 2);
+  let screen_rect = Rect::from_center(screen_posititon, frame_width, frame_height);
+  canvas.copy(texture, current_frame, screen_rect)?;
   canvas.present();
   Ok(())
 }
@@ -46,9 +94,12 @@ fn main() -> Result<(), String> {
 
   let texture_creator = canvas.texture_creator();
   let texture = texture_creator.load_texture("assets/bardo.png")?;
-  let player = Player {
+  let mut player = Player {
     position: Point::new(0, 0),
     sprite: Rect::new(0, 0, 26, 36),
+    speed: 0,
+    direction: Direction::Down,
+    current_frame: 0,
   };
 
   let mut event_pump = sdl_ctx.event_pump()?;
@@ -63,10 +114,33 @@ fn main() -> Result<(), String> {
         } => {
           break 'running;
         }
+        Event::KeyDown { keycode: Some(Keycode::Left), .. } => {
+          player.speed = PLAYER_MOVEMENT_SPEED;
+          player.direction = Direction::Left;
+        }
+        Event::KeyDown { keycode: Some(Keycode::Right), .. } => {
+          player.speed = PLAYER_MOVEMENT_SPEED;
+          player.direction = Direction::Right;
+        }
+        Event::KeyDown { keycode: Some(Keycode::Up), .. } => {
+          player.speed = PLAYER_MOVEMENT_SPEED;
+          player.direction = Direction::Up;
+        }
+        Event::KeyDown { keycode: Some(Keycode::Down), .. } => {
+          player.speed = PLAYER_MOVEMENT_SPEED;
+          player.direction = Direction::Down;
+        }
+        Event::KeyUp { keycode: Some(Keycode::Left), repeat: false, .. } |
+        Event::KeyUp { keycode: Some(Keycode::Right), repeat: false, .. } |
+        Event::KeyUp { keycode: Some(Keycode::Up), repeat: false, .. } |
+        Event::KeyUp { keycode: Some(Keycode::Down), repeat: false, .. } => {
+          player.speed = 0;
+        }
         _ => {}
       }
     }
 
+    update_player(&mut player);
     i = (i + 1) % 255;
     render(&mut canvas, Color::RGB(i, 64, 255 - i), &texture, &player)?;
     ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60))
